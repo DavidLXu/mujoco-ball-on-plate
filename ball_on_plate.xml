@@ -1,0 +1,258 @@
+<mujoco model="ball_on_plate">
+  <!--
+    Two-axis ball-on-plate plant.
+
+    Kinematic chain: world -> pitch body (hinge about world y)
+                            -> plate body (hinge about local x)
+    The ball is an unconstrained rigid body with a free joint.  It is NOT
+    kinematically attached to the plate: contact, friction and rolling are
+    resolved by MuJoCo's constraint solver.  The two hinges are torque
+    actuated; the ball is completely passive.
+  -->
+  <compiler angle="radian" autolimits="true"/>
+
+  <option timestep="0.0005"
+          integrator="implicitfast"
+          cone="elliptic"
+          impratio="10"
+          gravity="0 0 -9.81"/>
+
+  <visual>
+    <global offwidth="1280" offheight="960" azimuth="135" elevation="-24"/>
+    <quality shadowsize="4096" offsamples="8"/>
+    <map znear="0.02" zfar="20"/>
+    <headlight ambient="0.25 0.27 0.30" diffuse="0.55 0.55 0.55" specular="0.15 0.15 0.15"/>
+  </visual>
+
+  <asset>
+    <texture name="sky" type="skybox" builtin="gradient"
+             rgb1="0.09 0.12 0.17" rgb2="0.01 0.015 0.025" width="512" height="512"/>
+    <texture name="grid" type="2d" builtin="checker"
+             rgb1="0.16 0.19 0.24" rgb2="0.09 0.11 0.14"
+             width="256" height="256" mark="edge" markrgb="0.28 0.32 0.40"/>
+    <material name="grid" texture="grid" texrepeat="8 8" texuniform="true" reflectance="0.25"/>
+    <material name="plate" rgba="0.13 0.20 0.29 1" specular="0.55" shininess="0.55"/>
+    <material name="rim" rgba="0.62 0.67 0.74 1" specular="0.6" shininess="0.5"/>
+    <material name="metal" rgba="0.42 0.46 0.52 1" specular="0.7" shininess="0.6"/>
+    <material name="ball" rgba="0.98 0.46 0.10 1" specular="0.9" shininess="0.85"/>
+    <material name="target" rgba="0.10 0.85 0.95 0.95" specular="0.4" shininess="0.5"
+              emission="0.30"/>
+  </asset>
+
+  <worldbody>
+    <light name="key" pos="1.2 -1.4 2.6" dir="-0.35 0.4 -1" directional="true"
+           diffuse="0.75 0.75 0.75" specular="0.35 0.35 0.35" castshadow="true"/>
+    <light name="fill" pos="-1.6 1.0 1.8" dir="0.5 -0.3 -1" directional="true"
+           diffuse="0.25 0.28 0.35" castshadow="false"/>
+
+    <geom name="floor" type="plane" size="4 4 0.02" material="grid" pos="0 0 0"/>
+    <camera name="track" pos="0.72 -0.82 1.10"
+            xyaxes="0.75 0.66 0 -0.30 0.34 0.89" fovy="40"/>
+    <camera name="top" pos="0 0 1.55" xyaxes="1 0 0 0 1 0" fovy="38"/>
+    <camera name="front" pos="0 -1.25 0.92" xyaxes="1 0 0 0 0.35 0.94" fovy="38"/>
+
+    <!-- table / pedestal -->
+    <body name="base" pos="0 0 0.62">
+      <geom name="post" type="cylinder" size="0.035 0.31" pos="0 0 -0.31"
+            material="metal" contype="0" conaffinity="0"/>
+      <geom name="foot" type="cylinder" size="0.16 0.012" pos="0 0 -0.608"
+            material="metal" contype="0" conaffinity="0"/>
+      <geom name="hub" type="sphere" size="0.030" pos="0 0 -0.038"
+            material="metal" contype="0" conaffinity="0"/>
+
+      <!-- pitch: outer gimbal, rotation about world +y -->
+      <body name="pitch_body" pos="0 0 0">
+        <joint name="pitch" type="hinge" axis="0 1 0" range="-0.40 0.40"
+               damping="0.015" armature="0.010" limited="true"/>
+        <geom name="gimbal_axle" type="cylinder" size="0.009 0.335" pos="0 0 -0.036"
+              quat="0.70710678 0 0.70710678 0" material="metal"
+              contype="0" conaffinity="0"/>
+        <geom name="gimbal_side_pos" type="box" size="0.012 0.305 0.012"
+              pos="0.315 0 -0.036" material="metal" contype="0" conaffinity="0"/>
+        <geom name="gimbal_side_neg" type="box" size="0.012 0.305 0.012"
+              pos="-0.315 0 -0.036" material="metal" contype="0" conaffinity="0"/>
+
+        <!-- roll: plate rotates about the (already pitched) local +x axis -->
+        <body name="plate" pos="0 0 0">
+          <joint name="roll" type="hinge" axis="1 0 0" range="-0.40 0.40"
+                 damping="0.015" armature="0.010" limited="true"/>
+          <geom name="plate_surface" type="box" size="0.30 0.30 0.008"
+                pos="0 0 -0.008" mass="1.20" material="plate"
+                condim="6" friction="1.1 0.0005 0.00005"
+                solref="0.0035 1" solimp="0.95 0.99 0.002"/>
+          <!-- low rails: keep a runaway ball on the plate; out of the 0.16 m workspace -->
+          <geom name="rail_px" type="box" size="0.008 0.30 0.012"
+                pos="0.296 0 0.012" material="rim" condim="3" friction="0.8 0.005 0.0005"/>
+          <geom name="rail_nx" type="box" size="0.008 0.30 0.012"
+                pos="-0.296 0 0.012" material="rim" condim="3" friction="0.8 0.005 0.0005"/>
+          <geom name="rail_py" type="box" size="0.288 0.008 0.012"
+                pos="0 0.296 0.012" material="rim" condim="3" friction="0.8 0.005 0.0005"/>
+          <geom name="rail_ny" type="box" size="0.288 0.008 0.012"
+                pos="0 -0.296 0.012" material="rim" condim="3" friction="0.8 0.005 0.0005"/>
+
+          <!-- dotted reference circle: visual-only, no collision -->
+          <geom type="sphere" size="0.0022"
+                pos="0.160 0 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="0.158491 0.021946 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="0.153987 0.043690 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="0.146512 0.064823 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="0.136111 0.084953 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="0.122849 0.103703 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="0.106814 0.120728 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="0.088113 0.135718 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="0.066871 0.148404 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="0.043231 0.158502 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="0.021843 0.158600 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="0.000000 0.160000 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="-0.021843 0.158600 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="-0.043231 0.158502 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="-0.066871 0.148404 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="-0.088113 0.135718 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="-0.106814 0.120728 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="-0.122849 0.103703 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="-0.136111 0.084953 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="-0.146512 0.064823 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="-0.153987 0.043690 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="-0.158491 0.021946 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="-0.160000 0.000000 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="-0.158491 -0.021946 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="-0.153987 -0.043690 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="-0.146512 -0.064823 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="-0.136111 -0.084953 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="-0.122849 -0.103703 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="-0.106814 -0.120728 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="-0.088113 -0.135718 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="-0.066871 -0.148404 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="-0.043231 -0.158502 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="-0.021843 -0.158600 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="0.000000 -0.160000 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="0.021843 -0.158600 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="0.043231 -0.158502 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="0.066871 -0.148404 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="0.088113 -0.135718 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="0.106814 -0.120728 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="0.122849 -0.103703 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="0.136111 -0.084953 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="0.146512 -0.064823 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="0.153987 -0.043690 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+          <geom type="sphere" size="0.0022"
+                pos="0.158491 -0.021946 0.0015" material="target"
+                contype="0" conaffinity="0" mass="0"/>
+        </body>
+      </body>
+    </body>
+
+    <!-- free-flying ball: everything is resolved through contact -->
+    <body name="ball" pos="0.000 0.000 0.6455">
+      <freejoint name="ball_free"/>
+      <geom name="ball_geom" type="sphere" size="0.025" mass="0.045"
+            material="ball" condim="6" friction="1.1 0.0005 0.00005"
+            solref="0.0035 1" solimp="0.95 0.99 0.002"/>
+      <geom name="ball_mark_a" type="sphere" size="0.0045" pos="0.000 0.000 0.0242"
+            mass="0" material="rim" contype="0" conaffinity="0"/>
+      <geom name="ball_mark_b" type="sphere" size="0.0045" pos="0.0171 0.0171 0.0121"
+            mass="0" material="plate" contype="0" conaffinity="0"/>
+      <geom name="ball_mark_c" type="sphere" size="0.0045" pos="-0.0171 -0.0171 0.0121"
+            mass="0" material="plate" contype="0" conaffinity="0"/>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <motor name="pitch_motor" joint="pitch" gear="1" ctrlrange="-6 6"/>
+    <motor name="roll_motor" joint="roll" gear="1" ctrlrange="-6 6"/>
+  </actuator>
+
+  <sensor>
+    <jointpos name="pitch_pos" joint="pitch"/>
+    <jointpos name="roll_pos" joint="roll"/>
+    <jointvel name="pitch_vel" joint="pitch"/>
+    <jointvel name="roll_vel" joint="roll"/>
+    <framepos name="ball_world" objtype="body" objname="ball"/>
+    <framelinvel name="ball_linvel" objtype="body" objname="ball"/>
+  </sensor>
+</mujoco>
