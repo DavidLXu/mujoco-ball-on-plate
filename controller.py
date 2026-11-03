@@ -172,6 +172,9 @@ class ControllerConfig:
     kp: float = 60.0
     kd: float = 18.0
     ki: float = 0.0
+    # optional first-order filters; 0 disables them
+    vel_filter_hz: float = 0.0
+    joint_rate_filter_hz: float = 0.0
     # inner plate-angle loop [N*m/rad], [N*m*s/rad]
     kp_joint: float = 140.0
     kd_joint: float = 18.0
@@ -219,6 +222,9 @@ class BallPlateController:
         self.cfg = cfg
         self.integral = np.zeros(2)
         self._last_t: float | None = None
+        self._vel_filtered: np.ndarray | None = None
+        self._pitch_rate_f = 0.0
+        self._roll_rate_f = 0.0
         self.last: ControlDiagnostics | None = None
 
         self.pitch_joint = model.joint("pitch").id
@@ -229,6 +235,9 @@ class BallPlateController:
     def reset(self) -> None:
         self.integral[:] = 0.0
         self._last_t = None
+        self._vel_filtered = None
+        self._pitch_rate_f = 0.0
+        self._roll_rate_f = 0.0
         self.last = None
 
     def observe(self, data) -> PlateBallState:
@@ -241,11 +250,21 @@ class BallPlateController:
         ref = self.reference.sample(now)
 
         e = ref.p - state.p[:2]
-        ed = ref.v - state.v[:2]
+        dt = now - self._last_t if self._last_t is not None else float(self.model.opt.timestep)
+        dt = max(dt, 1e-6)
+
+        v_meas = state.v[:2]
+        if cfg.vel_filter_hz > 0.0:
+            alpha = 1.0 - np.exp(-2.0 * np.pi * cfg.vel_filter_hz * dt)
+            if self._vel_filtered is None:
+                self._vel_filtered = v_meas.copy()
+            else:
+                self._vel_filtered += alpha * (v_meas - self._vel_filtered)
+            v_meas = self._vel_filtered
+        ed = ref.v - v_meas
 
         if cfg.ki > 0.0:
-            dt = now - self._last_t if self._last_t is not None else float(self.model.opt.timestep)
-            self.integral += e * max(dt, 1e-6)
+            self.integral += e * dt
             norm = np.linalg.norm(self.integral)
             if norm > cfg.integral_limit:
                 self.integral *= cfg.integral_limit / norm
@@ -268,12 +287,19 @@ class BallPlateController:
             )
         )
 
+        pitch_rate, roll_rate = state.pitch_rate, state.roll_rate
+        if cfg.joint_rate_filter_hz > 0.0:
+            alpha = 1.0 - np.exp(-2.0 * np.pi * cfg.joint_rate_filter_hz * dt)
+            self._pitch_rate_f += alpha * (pitch_rate - self._pitch_rate_f)
+            self._roll_rate_f += alpha * (roll_rate - self._roll_rate_f)
+            pitch_rate, roll_rate = self._pitch_rate_f, self._roll_rate_f
+
         tau = np.array(
             [
                 cfg.kp_joint * (pitch_des - state.pitch)
-                - cfg.kd_joint * state.pitch_rate,
+                - cfg.kd_joint * pitch_rate,
                 cfg.kp_joint * (roll_des - state.roll)
-                - cfg.kd_joint * state.roll_rate,
+                - cfg.kd_joint * roll_rate,
             ]
         )
         lo = self.model.actuator_ctrlrange[self.pitch_act, 0]

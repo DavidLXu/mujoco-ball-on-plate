@@ -1,6 +1,11 @@
-# MuJoCo 板球平衡：双轴板控制下的圆周轨迹
+# MuJoCo 板球平衡：圆周轨迹与任意形状（Fourier 一笔画）
 
-用 MuJoCo 搭建一个**真实接触动力学**的板球系统：球是带 free joint 的刚体，完全被动；板由两个铰链关节做俯仰/滚转，两个电机输出力矩。控制器根据球在板面内的位置/速度，解算需要的板倾角，让球从板中心平滑加速并稳定地做半径 0.16 m、周期 4 s 的圆周运动。
+用 MuJoCo 搭建一个**真实接触动力学**的板球系统：球是带 free joint 的刚体，完全被动；板由两个铰链关节做俯仰/滚转，两个电机输出力矩。控制器根据球在板面内的位置/速度，解算需要的板倾角。
+
+在这个基础模型上实现了两类目标：
+
+1. 从板中心平滑起步，稳定跟踪半径 0.16 m、周期 4 s 的圆周；
+2. 把任意闭合一笔画分解成傅里叶描述子，让球在板上画出 **Joseph Fourier 的侧面像**。
 
 ![preview](outputs/preview.png)
 
@@ -10,9 +15,9 @@
 
 ## 项目背景
 
-这是我在 **DeepSeek Harness** 上完成的第一个项目。它不只是生成了一段仿真代码，而是从 MuJoCo 的 MJCF 建模、接触与滚动约束、控制算法推导，一路做到可视化、指标评估和回归测试。最终球在真实接触仿真中达到了约 1 mm 的圆周跟踪误差，也让我直观感受到 DeepSeek Harness 对物理仿真器这类任务的理解能力。
+这是我在 **DeepSeek Harness** 上完成的第一个项目。它不只是生成了一段仿真代码，而是从 MuJoCo 的 MJCF 建模、接触与滚动约束、控制算法推导，一路做到可视化、指标评估和回归测试。最终球在真实接触仿真中达到了约 1 mm 的圆周跟踪误差，并进一步扩展到用傅里叶描述子画出一幅 Fourier 一笔画，也让我直观感受到 DeepSeek Harness 对物理仿真器这类任务的理解能力。
 
-## 结果
+## 圆周跟踪
 
 稳定段（12.4–20 s）的跟踪结果：
 
@@ -30,6 +35,61 @@
 
 > 这里的误差是 MuJoCo 中球的实际位置与参考位置之差。球没有被“绑定”到轨迹上：所有运动都来自板面接触、摩擦和滚动约束。
 
+## 任意形状：Fourier 一笔画
+
+同一套物理模型和控制器可以直接跟踪任意闭合一笔画。示例把一条手工构造的、19 世纪版画风格的 Fourier 侧面轮廓作为单笔路径，用 45 个傅里叶谐波重建，再让球沿它画出来。
+
+![Fourier portrait](outputs/fourier/preview.png)
+
+- 实时视频：[`outputs/fourier/ball_on_plate_fourier.mp4`](outputs/fourier/ball_on_plate_fourier.mp4)（36 s，900×900，60 fps）
+- 4× 快放预览：[`outputs/fourier/preview.gif`](outputs/fourier/preview.gif)
+- 跟踪曲线：[`outputs/fourier/tracking.png`](outputs/fourier/tracking.png)
+- 傅里叶分析：[`outputs/fourier/fourier_analysis.png`](outputs/fourier/fourier_analysis.png)
+
+绘制结果：
+
+| 指标 | 数值 |
+|---|---:|
+| 傅里叶谐波数 | 45 |
+| 一笔画长度 | 1.398 m |
+| 绘制时长 | 34.0 s |
+| 位置 RMS 误差 | **0.47 mm** |
+| 位置最大误差 | 1.39 mm |
+| 95% 分位误差 | 0.89 mm |
+| 最大板倾角 | 1.81° |
+| 最大关节力矩 | 0.978 N·m |
+| 接触滑移速度 RMS | 0.39 mm/s |
+| 45 阶谐波能量占比 | 99.999% |
+
+### 怎么把一笔画变成参考轨迹
+
+`drawing.py` 把闭合轮廓采样成复数序列 \(z_n=x_n+iy_n\)，做 FFT 得到傅里叶描述子：
+
+\[
+c_k=\frac{1}{N}\sum_{n=0}^{N-1} z_n e^{-i2\pi kn/N},
+\qquad
+z(u)=\sum_{k=-K}^{K} c_k e^{i2\pi ku}
+\]
+
+只保留 \(K=45\) 个正频率及其共轭项，轮廓就被低通成一个光滑、可微的单笔曲线。随后根据曲率 \(\kappa(s)\) 和期望的侧向加速度上限生成速度剖面：
+
+\[
+v_{\max}(s)=\min\left(v_{\text{cap}},\sqrt{\frac{a_{\text{lat}}}{\kappa(s)}}\right)
+\]
+
+再对切向加速度限幅、对速度剖面做滑动最小值和低通平滑，最后积分成 \(p_d(t)\)。尖角处球会自动减速，长直段则保持较快的线速度。
+
+这段参考仍然送入完全相同的串级控制器：外环把 \(a_d\) 反解成板倾角，内环用关节 PD 输出力矩。球依然只是被动滚动，没有任何脚本化的位置。
+
+要换成别的形状，只需提供任意闭合二维点列：
+
+```python
+from drawing import make_fourier_path, FourierDrawing
+
+path = make_fourier_path(my_closed_points, harmonics=60, target_span=0.40)
+reference = FourierDrawing(path)
+```
+
 ## 快速开始
 
 ```bash
@@ -38,14 +98,18 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-# 20 s 仿真，同时生成视频、GIF、曲线和 metrics
+# 圆周跟踪：20 s 仿真，生成视频、GIF、曲线和 metrics
 python simulate.py
+
+# 任意形状 / Fourier 一笔画：约 34 s 绘制
+python draw_fourier.py
 
 # 只跑物理和控制，不渲染
 python simulate.py --no-video
+python draw_fourier.py --no-video
 
-# 短一点的自检
-python -m unittest -v test_smoke.py
+# 自检
+python -m unittest -v test_smoke.py test_fourier.py
 ```
 
 macOS 上程序会自动设置 `MUJOCO_GL=cgl`。Linux 无显示器时，渲染前可设置：
@@ -180,6 +244,18 @@ p_d=r\begin{bmatrix}\cos\omega t\\ \sin\omega t\end{bmatrix},\qquad
 | [`outputs/trajectory.npz`](outputs/trajectory.npz) | 200 Hz 完整日志（位置、速度、角度、力矩、滑移等） |
 | [`outputs/metrics.json`](outputs/metrics.json) | 全部指标 |
 
+运行 `python draw_fourier.py` 后：
+
+| 文件 | 内容 |
+|---|---|
+| [`outputs/fourier/ball_on_plate_fourier.mp4`](outputs/fourier/ball_on_plate_fourier.mp4) | Fourier 一笔画实时视频 |
+| [`outputs/fourier/preview.gif`](outputs/fourier/preview.gif) | 4× 快放循环预览 |
+| [`outputs/fourier/preview.png`](outputs/fourier/preview.png) | 完成后的单帧 |
+| [`outputs/fourier/tracking.png`](outputs/fourier/tracking.png) | 绘制轨迹、误差、板角、力矩 |
+| [`outputs/fourier/fourier_analysis.png`](outputs/fourier/fourier_analysis.png) | 傅里叶重建、频谱、收敛、速度剖面 |
+| [`outputs/fourier/trajectory.npz`](outputs/fourier/trajectory.npz) | 绘制过程完整日志 |
+| [`outputs/fourier/metrics.json`](outputs/fourier/metrics.json) | 全部指标 |
+
 仿真日志中的位置/速度都在**板坐标系**下，和控制器使用的坐标一致。
 
 ## 代码结构
@@ -187,12 +263,17 @@ p_d=r\begin{bmatrix}\cos\omega t\\ \sin\omega t\end{bmatrix},\qquad
 ```
 ball_on_plate_mujoco/
 ├── ball_on_plate.xml     # MuJoCo 物理模型（铰链、板、自由球、接触、电机）
-├── controller.py         # 参考轨迹、状态读取、串级控制器
-├── simulate.py           # 仿真主循环、日志、指标、视频/GIF
-├── plotting.py           # 结果曲线
-├── test_smoke.py         # 端到端跟踪自检
+├── controller.py         # 状态读取、串级控制器
+├── simulate.py           # 圆周跟踪主循环、日志、视频/GIF
+├── plotting.py           # 圆周结果曲线
+├── drawing.py            # Fourier 描述子、任意一笔画、曲率限速
+├── draw_fourier.py       # Fourier 绘制主循环、俯视叠加渲染
+├── drawing_plots.py      # 绘制结果与傅里叶分析图
+├── test_smoke.py         # 圆周端到端自检
+├── test_fourier.py       # Fourier 参考快速自检
 ├── requirements.txt
-└── outputs/
+├── outputs/              # 圆周结果
+└── outputs/fourier/      # Fourier 一笔画结果
 ```
 
 ## 实现说明与可扩展方向
@@ -201,3 +282,4 @@ ball_on_plate_mujoco/
 - 如果需要更激进的轨迹（更高频率、更大半径、快速换向），可以把外环替换为基于完整刚体动力学的 MPC / 计算力矩控制，或把板的角速度项加入前馈。
 - 迁移到真机时，需要辨识滚动阻力、接触摩擦、电机带宽和传感器延迟；可以在此基础上加入积分项、扰动观测器或自适应摩擦补偿。
 - 当前球和板都是刚体，接触是点接触。若研究软球/软板，可替换为 MuJoCo 的 flex/soft 模型或外部 FEM/MPM 耦合。
+- 一笔画的目标是**手工设计的 Fourier 侧面轮廓**，不是从照片自动描边；如果要从图片生成，可先用边缘/轮廓提取得到闭合点列，再传给 `make_fourier_path`。

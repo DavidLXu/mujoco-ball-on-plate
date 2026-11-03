@@ -1,0 +1,25 @@
+{
+  "drawing": "Joseph Fourier one-stroke profile silhouette",
+  "harmonics": 45,
+  "target_span_m": 0.42,
+  "path_length_m": 1.3981384610435887,
+  "drawing_duration_s": 34.04048368893524,
+  "video_duration_s": 36.24048368893524,
+  "control_rate_hz": 1000.0,
+  "rms_mm": 0.4714767375899458,
+  "max_mm": 1.392999560835656,
+  "p95_mm": 0.8904398448987312,
+  "final_error_mm": 0.7653398884439069,
+  "max_tilt_deg": 1.8095475281782953,
+  "max_torque_nm": 0.9777077778776408,
+  "torque_limit": 6.0,
+  "saturation_fraction": 0.0,
+  "slip_rms_mm_s": 0.39007887883882675,
+  "max_ref_speed_m_s": 0.06999999742081547,
+  "max_ref_accel_m_s2": 0.15757334319578326,
+  "fourier_energy_percent": 99.9988932648515,
+  "start_point_m": [
+    0.007452246169365736,
+    -0.1970020886276243
+  ]
+}
