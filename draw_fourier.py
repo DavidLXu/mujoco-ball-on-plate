@@ -112,7 +112,7 @@ def _hud(
         f_title = f_body = f_small = ImageFont.load_default()
 
     x0, y0 = int(w * 0.032), int(h * 0.030)
-    box_w, box_h = int(w * 0.585), int(h * 0.165)
+    box_w, box_h = int(w * 0.640), int(h * 0.165)
     draw.rounded_rectangle(
         (x0, y0, x0 + box_w, y0 + box_h),
         radius=int(w * 0.012),
@@ -132,7 +132,7 @@ def _hud(
               f"t = {t:5.1f} / {duration:4.1f} s      error = {err_mm:4.2f} mm",
               font=f_body, fill=(226, 232, 240, 255))
     draw.text((tx, y0 + int(box_h * 0.63)),
-              f"K = {harmonics} Fourier harmonics   ·   stroke {path_length:.2f} m"
+              f"4× speed   ·   K = {harmonics} harmonics   ·   stroke {path_length:.2f} m"
               "   ·   2 kHz / 1 kHz",
               font=f_small, fill=(148, 163, 184, 255))
 
@@ -195,13 +195,80 @@ def _overlay_stroke(
     return np.asarray(image.convert("RGB"))
 
 
+def _panel_tag(image: np.ndarray, title: str, subtitle: str) -> np.ndarray:
+    """Small label in the lower-left corner of a viewport."""
+    img = Image.fromarray(image).convert("RGBA")
+    layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+    w, h = img.size
+    try:
+        f1 = ImageFont.truetype(str(FONT), int(w * 0.017))
+        f2 = ImageFont.truetype(str(FONT), int(w * 0.013))
+    except OSError:
+        f1 = f2 = ImageFont.load_default()
+    x0, y0 = int(w * 0.028), int(h * 0.905)
+    box_w, box_h = int(w * 0.44), int(h * 0.065)
+    draw.rounded_rectangle(
+        (x0, y0, x0 + box_w, y0 + box_h), radius=int(w * 0.008),
+        fill=(8, 15, 30, 185), outline=(71, 85, 105, 120), width=1,
+    )
+    draw.text((x0 + int(w * 0.012), y0 + int(h * 0.008)), title, font=f1,
+              fill=(226, 232, 240, 255))
+    draw.text((x0 + int(w * 0.012), y0 + int(h * 0.037)), subtitle, font=f2,
+              fill=(148, 163, 184, 255))
+    img = Image.alpha_composite(img, layer).convert("RGB")
+    return np.asarray(img)
+
+
+def _add_trail_3d(scene, points: list[np.ndarray], radius: float = 0.0020) -> None:
+    """Add a sparse orange dotted trail to the 3-D scene."""
+    if not points:
+        return
+    # Keep at most ~420 dots so the 3-D render stays fast.
+    step = max(1, len(points) // 420)
+    for pt in points[::step]:
+        if scene.ngeom >= scene.maxgeom:
+            return
+        g = scene.geoms[scene.ngeom]
+        mujoco.mjv_initGeom(
+            g, mujoco.mjtGeom.mjGEOM_SPHERE,
+            np.array([radius, 0.0, 0.0]), pt,
+            np.eye(3).ravel(), np.array([1.0, 0.55, 0.12, 0.90]),
+        )
+        g.category = mujoco.mjtCatBit.mjCAT_DECOR
+        g.emission = 0.65
+        scene.ngeom += 1
+
+
+def _compose_views(top: np.ndarray, view3d: np.ndarray) -> np.ndarray:
+    """Place the top view and the 3-D plant view side by side."""
+    h, w = top.shape[:2]
+    canvas = Image.new("RGB", (2 * w, h), (8, 15, 30))
+    canvas.paste(Image.fromarray(top), (0, 0))
+    canvas.paste(Image.fromarray(view3d), (w, 0))
+    draw = ImageDraw.Draw(canvas)
+    draw.line((w, 0, w, h), fill=(51, 65, 85), width=2)
+    # 4x badge on the 3-D side
+    try:
+        f = ImageFont.truetype(str(FONT), int(w * 0.022))
+    except OSError:
+        f = ImageFont.load_default()
+    badge = (w + int(w * 0.80), int(h * 0.030), 2 * w - int(w * 0.030),
+             int(h * 0.030) + int(h * 0.055))
+    draw.rounded_rectangle(badge, radius=int(h * 0.012), fill=(8, 15, 30, 200),
+                           outline=(251, 146, 60, 180), width=2)
+    draw.text((badge[0] + int(w * 0.016), badge[1] + int(h * 0.009)),
+              "4× SPEED", font=f, fill=(253, 186, 116, 255))
+    return np.asarray(canvas)
+
+
 def _make_gif(video_path: Path, gif_path: Path, duration: float) -> bool:
     ffmpeg = "/opt/homebrew/bin/ffmpeg"
     if not Path(ffmpeg).exists():
         ffmpeg = "ffmpeg"
-    # 4x timelapse so the whole 34 s drawing is easy to preview.
+    # The video is already a 4x timelapse; only downsample for the GIF.
     vf = (
-        "setpts=0.25*PTS,fps=12,scale=540:-1:flags=lanczos,split[s0][s1];"
+        "fps=12,scale=960:-1:flags=lanczos,split[s0][s1];"
         "[s0]palettegen=max_colors=128[p];[s1][p]paletteuse=dither=bayer:bayer_scale=5"
     )
     try:
@@ -225,6 +292,7 @@ def run(
     width: int = 900,
     height: int = 900,
     fps: int = 60,
+    speed_factor: float = 4.0,
     outdir: str | Path = "outputs/fourier",
     make_preview_gif: bool = True,
     verbose: bool = True,
@@ -335,7 +403,7 @@ def run(
     sat_count = 0
     ctrl_count = 0
     next_frame = 0.0
-    frame_period = 1.0 / fps
+    frame_period = speed_factor / fps
     wall_start = time.perf_counter()
 
     for step in range(n_steps + 1):
@@ -369,18 +437,37 @@ def run(
 
         if render and data.time + 1e-9 >= next_frame and data.time < duration - 1e-9:
             trail.append(contact_world)
+
+            # ---- left panel: clean top view with the drawn stroke ----------
+            for i in range(model.nlight):
+                model.light_castshadow[i] = 0
             renderer.update_scene(data, camera="drawing")
             projector.update(renderer.scene)
-            frame = renderer.render()
+            top = renderer.render()
             ref_world = _path_world(data, guide_xy)
-            frame = _overlay_stroke(
-                frame, projector, ref_world, trail, state.ball_world,
+            top = _overlay_stroke(
+                top, projector, ref_world, trail, state.ball_world,
                 ball_radius, drawing.progress(data.time),
             )
-            frame = _hud(
-                frame, min(float(data.time), drawing.T), drawing.T, err_norm * 1000.0,
+            top = _hud(
+                top, min(float(data.time), drawing.T), drawing.T, err_norm * 1000.0,
                 drawing.progress(data.time), harmonics, drawing.path_length,
             )
+            top = _panel_tag(
+                top, "TOP VIEW", "ball-drawn stroke + Fourier guide"
+            )
+
+            # ---- right panel: 3-D view of the physical table ----------------
+            for i in range(model.nlight):
+                model.light_castshadow[i] = 1
+            renderer.update_scene(data, camera="track")
+            _add_trail_3d(renderer.scene, trail)
+            view3d = renderer.render()
+            view3d = _panel_tag(
+                view3d, "3D VIEW", "table, two-axis plate and free ball"
+            )
+
+            frame = _compose_views(top, view3d)
             writer.append_data(np.ascontiguousarray(frame))
             if not preview_saved and data.time >= drawing.T + 0.35:
                 Image.fromarray(frame).save(outdir / "preview.png")
@@ -395,7 +482,8 @@ def run(
         wall = time.perf_counter() - wall_start
         if verbose:
             print(f"[video] {outdir / 'ball_on_plate_fourier.mp4'} "
-                  f"({duration:.1f} s, {width}x{height}, {fps} fps, wall {wall:.1f} s)")
+                  f"({duration / speed_factor:.1f} s at {speed_factor:g}x, "
+                  f"{2 * width}x{height}, {fps} fps, wall {wall:.1f} s)")
         if make_preview_gif:
             gif = outdir / "preview.gif"
             if _make_gif(outdir / "ball_on_plate_fourier.mp4", gif,
@@ -419,8 +507,10 @@ def run(
         "target_span_m": span,
         "path_length_m": drawing.path_length,
         "drawing_duration_s": drawing.T,
-        "video_duration_s": duration,
+        "video_duration_s": duration / speed_factor,
+        "speed_factor": speed_factor,
         "control_rate_hz": 1.0 / (dt * control_every),
+        "render_speed_factor": speed_factor,
         "rms_mm": float(np.sqrt(np.mean(e[draw_window] ** 2)) * 1000.0),
         "max_mm": float(np.max(e[draw_window]) * 1000.0),
         "p95_mm": float(np.percentile(e[draw_window], 95) * 1000.0),
@@ -503,6 +593,7 @@ def main(argv=None) -> int:
     parser.add_argument("--width", type=int, default=900)
     parser.add_argument("--height", type=int, default=900)
     parser.add_argument("--fps", type=int, default=60)
+    parser.add_argument("--speed", type=float, default=4.0, help="video speed factor")
     parser.add_argument("--outdir", type=str, default="outputs/fourier")
     parser.add_argument("--no-gif", action="store_true")
     args = parser.parse_args(argv)
@@ -514,6 +605,7 @@ def main(argv=None) -> int:
         width=args.width,
         height=args.height,
         fps=args.fps,
+        speed_factor=args.speed,
         outdir=args.outdir,
         make_preview_gif=not args.no_gif,
     )

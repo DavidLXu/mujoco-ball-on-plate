@@ -41,10 +41,12 @@
 
 ![Fourier portrait](outputs/fourier/preview.png)
 
-- 实时视频：[`outputs/fourier/ball_on_plate_fourier.mp4`](outputs/fourier/ball_on_plate_fourier.mp4)（36 s，900×900，60 fps）
-- 4× 快放预览：[`outputs/fourier/preview.gif`](outputs/fourier/preview.gif)
+- 4× 双视图视频：[`outputs/fourier/ball_on_plate_fourier.mp4`](outputs/fourier/ball_on_plate_fourier.mp4)（9.1 s，1800×900，60 fps）
+- 4× 循环预览：[`outputs/fourier/preview.gif`](outputs/fourier/preview.gif)
 - 跟踪曲线：[`outputs/fourier/tracking.png`](outputs/fourier/tracking.png)
 - 傅里叶分析：[`outputs/fourier/fourier_analysis.png`](outputs/fourier/fourier_analysis.png)
+
+视频左侧是俯视图（带参考轮廓和实际笔画），右侧是同时渲染的 3D 台子视图，可以直接看到板、球和台体的空间关系。物理时间仍是 34 s，视频按 4× 速度播放。
 
 绘制结果：
 
@@ -101,8 +103,9 @@ pip install -r requirements.txt
 # 圆周跟踪：20 s 仿真，生成视频、GIF、曲线和 metrics
 python simulate.py
 
-# 任意形状 / Fourier 一笔画：约 34 s 绘制
+# 任意形状 / Fourier 一笔画：34 s 绘制，输出 4× 双视图视频
 python draw_fourier.py
+python draw_fourier.py --speed 4 --width 900 --height 900
 
 # 只跑物理和控制，不渲染
 python simulate.py --no-video
@@ -248,9 +251,9 @@ p_d=r\begin{bmatrix}\cos\omega t\\ \sin\omega t\end{bmatrix},\qquad
 
 | 文件 | 内容 |
 |---|---|
-| [`outputs/fourier/ball_on_plate_fourier.mp4`](outputs/fourier/ball_on_plate_fourier.mp4) | Fourier 一笔画实时视频 |
-| [`outputs/fourier/preview.gif`](outputs/fourier/preview.gif) | 4× 快放循环预览 |
-| [`outputs/fourier/preview.png`](outputs/fourier/preview.png) | 完成后的单帧 |
+| [`outputs/fourier/ball_on_plate_fourier.mp4`](outputs/fourier/ball_on_plate_fourier.mp4) | 4× 双视图视频（左俯视 / 右 3D） |
+| [`outputs/fourier/preview.gif`](outputs/fourier/preview.gif) | 4× 双视图循环预览 |
+| [`outputs/fourier/preview.png`](outputs/fourier/preview.png) | 完成后的双视图单帧 |
 | [`outputs/fourier/tracking.png`](outputs/fourier/tracking.png) | 绘制轨迹、误差、板角、力矩 |
 | [`outputs/fourier/fourier_analysis.png`](outputs/fourier/fourier_analysis.png) | 傅里叶重建、频谱、收敛、速度剖面 |
 | [`outputs/fourier/trajectory.npz`](outputs/fourier/trajectory.npz) | 绘制过程完整日志 |
