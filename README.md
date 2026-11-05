@@ -5,7 +5,7 @@
 在这个基础模型上实现了两类目标：
 
 1. 从板中心平滑起步，稳定跟踪半径 0.16 m、周期 4 s 的圆周；
-2. 把任意闭合一笔画分解成傅里叶描述子，让球在板上画出 **Joseph Fourier 的侧面像**。
+2. 把任意闭合一笔画分解成傅里叶描述子，让球在板上画出 **Joseph Fourier 版画的单笔剪影**。
 
 ![preview](outputs/preview.png)
 
@@ -37,35 +37,37 @@
 
 ## 任意形状：Fourier 一笔画
 
-同一套物理模型和控制器可以直接跟踪任意闭合一笔画。示例把一条手工构造的、19 世纪版画风格的 Fourier 侧面剪影作为单笔路径，用 45 个傅里叶谐波重建，再让球沿它画出来。
+同一套物理模型和控制器可以直接跟踪任意闭合一笔画。示例使用公有领域的 Fourier 版画 **“Joseph Fourier”, A. F. B. Geille after J. Boilly**（Wikimedia Commons），用 [`extract_portrait.py`](extract_portrait.py) 提取人物外轮廓，再用 40 个傅里叶谐波重建，让球沿轮廓画出来。
 
-> **关于“哪个 Fourier 头像”**：这不是对某一张具体历史照片或版画的自动描边，而是我手工设计的风格化侧面剪影，主要用于演示“任意闭合一笔画 + 傅里叶描述子 + 物理跟踪”。它可以被称为 Fourier 风格的剪影，但不应视为严格的历史肖像复刻。下面是从控制点输入到傅里叶重建/球实际轨迹的对照：
+> **关于“哪个 Fourier 头像”**：用的是下面这张公有领域版画，来源为 [Wikimedia Commons: File:Joseph Fourier.jpg](https://commons.wikimedia.org/wiki/File:Joseph_Fourier.jpg)。因为球的轨迹必须是一条连续闭合曲线，这里画的是**外轮廓剪影**，不包含版画内部的五官和排线；它比之前手工构造的轮廓有真实历史图像依据。
 
 ![source and reconstruction](outputs/fourier/portrait_reference.png)
 
+左侧：原版画和红色提取轮廓；右侧：40 阶傅里叶重建与球的实际轨迹。
+
 ![Fourier portrait](outputs/fourier/preview.png)
 
-- 4× 双视图视频：[`outputs/fourier/ball_on_plate_fourier.mp4`](outputs/fourier/ball_on_plate_fourier.mp4)（9.1 s，1800×900，60 fps）
+- 4× 双视图视频：[`outputs/fourier/ball_on_plate_fourier.mp4`](outputs/fourier/ball_on_plate_fourier.mp4)（约 9.2 s，1800×900，60 fps）
 - 4× 循环预览：[`outputs/fourier/preview.gif`](outputs/fourier/preview.gif)
 - 跟踪曲线：[`outputs/fourier/tracking.png`](outputs/fourier/tracking.png)
 - 傅里叶分析：[`outputs/fourier/fourier_analysis.png`](outputs/fourier/fourier_analysis.png)
 
-视频左侧是俯视图（带参考轮廓和实际笔画），右侧是同时渲染的 3D 台子视图，可以直接看到板、球和台体的空间关系。物理时间仍是 34 s，视频按 4× 速度播放。
+视频左侧是俯视图（带参考轮廓和实际笔画），右侧是同时渲染的 3D 台子视图，可以直接看到板、球和台体的空间关系。物理时间约 34.4 s，视频按 4× 速度播放。
 
 绘制结果：
 
 | 指标 | 数值 |
 |---|---:|
-| 傅里叶谐波数 | 45 |
-| 一笔画长度 | 1.398 m |
-| 绘制时长 | 34.0 s |
-| 位置 RMS 误差 | **0.47 mm** |
-| 位置最大误差 | 1.39 mm |
-| 95% 分位误差 | 0.89 mm |
-| 最大板倾角 | 1.81° |
-| 最大关节力矩 | 0.978 N·m |
+| 傅里叶谐波数 | 40 |
+| 一笔画长度 | 1.421 m |
+| 绘制时长 | 34.4 s |
+| 位置 RMS 误差 | **0.42 mm** |
+| 位置最大误差 | 1.95 mm |
+| 95% 分位误差 | 0.79 mm |
+| 最大板倾角 | 2.19° |
+| 最大关节力矩 | 1.826 N·m |
 | 接触滑移速度 RMS | 0.39 mm/s |
-| 45 阶谐波能量占比 | 99.999% |
+| 40 阶谐波能量占比 | 99.999% |
 
 ### 怎么把一笔画变成参考轨迹
 
@@ -260,6 +262,8 @@ p_d=r\begin{bmatrix}\cos\omega t\\ \sin\omega t\end{bmatrix},\qquad
 | [`outputs/fourier/preview.png`](outputs/fourier/preview.png) | 完成后的双视图单帧 |
 | [`outputs/fourier/tracking.png`](outputs/fourier/tracking.png) | 绘制轨迹、误差、板角、力矩 |
 | [`outputs/fourier/fourier_analysis.png`](outputs/fourier/fourier_analysis.png) | 傅里叶重建、频谱、收敛、速度剖面 |
+| [`outputs/fourier/portrait_reference.png`](outputs/fourier/portrait_reference.png) | 原版画、提取轮廓与球轨迹对照 |
+| [`outputs/fourier/source_contour.png`](outputs/fourier/source_contour.png) | 原版画上的红色提取轮廓 |
 | [`outputs/fourier/trajectory.npz`](outputs/fourier/trajectory.npz) | 绘制过程完整日志 |
 | [`outputs/fourier/metrics.json`](outputs/fourier/metrics.json) | 全部指标 |
 
@@ -274,8 +278,10 @@ ball_on_plate_mujoco/
 ├── simulate.py           # 圆周跟踪主循环、日志、视频/GIF
 ├── plotting.py           # 圆周结果曲线
 ├── drawing.py            # Fourier 描述子、任意一笔画、曲率限速
-├── draw_fourier.py       # Fourier 绘制主循环、俯视叠加渲染
+├── extract_portrait.py   # 从真实版画提取单笔轮廓
+├── draw_fourier.py       # Fourier 绘制主循环、俯视 + 3D 双视图
 ├── drawing_plots.py      # 绘制结果与傅里叶分析图
+├── assets/               # 公有领域原图与提取的轮廓点
 ├── test_smoke.py         # 圆周端到端自检
 ├── test_fourier.py       # Fourier 参考快速自检
 ├── requirements.txt

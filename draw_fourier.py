@@ -286,8 +286,8 @@ def _make_gif(video_path: Path, gif_path: Path, duration: float) -> bool:
 # Main simulation
 # --------------------------------------------------------------------------- #
 def run(
-    harmonics: int = 45,
-    span: float = 0.42,
+    harmonics: int = 40,
+    span: float = 0.46,
     render: bool = True,
     width: int = 900,
     height: int = 900,
@@ -307,12 +307,12 @@ def run(
     raw = np.roll(raw, -start_idx, axis=0)
 
     fourier_path = make_fourier_path(
-        raw, harmonics=harmonics, target_span=span, smooth_sigma=8.0
+        raw, harmonics=harmonics, target_span=span, smooth_sigma=40.0
     )
     # Slow enough that the plate never runs out of authority, including at the
     # sharp nose/shoulder details.
     drawing = FourierDrawing(
-        fourier_path, a_lat=0.10, a_tan=0.02, v_max=0.07, v_min=0.003
+        fourier_path, a_lat=0.08, a_tan=0.015, v_max=0.06, v_min=0.003
     )
 
     model = mujoco.MjModel.from_xml_path(str(MODEL_PATH))
@@ -502,7 +502,7 @@ def run(
     cumulative = fourier_path.cumulative_energy()
 
     metrics = {
-        "drawing": "Joseph Fourier one-stroke profile silhouette",
+        "drawing": "Joseph Fourier silhouette after Geille/Boilly (public domain)",
         "harmonics": harmonics,
         "target_span_m": span,
         "path_length_m": drawing.path_length,
@@ -587,8 +587,8 @@ def _contact_metrics(model, data, state, radius: float) -> tuple[float, float]:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--harmonics", type=int, default=45)
-    parser.add_argument("--span", type=float, default=0.42, help="longest drawing span [m]")
+    parser.add_argument("--harmonics", type=int, default=40)
+    parser.add_argument("--span", type=float, default=0.46, help="longest drawing span [m]")
     parser.add_argument("--no-video", action="store_true")
     parser.add_argument("--width", type=int, default=900)
     parser.add_argument("--height", type=int, default=900)

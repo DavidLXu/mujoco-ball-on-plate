@@ -1,5 +1,11 @@
 """Fourier-descriptor drawing references for the ball-on-plate plant.
 
+The default portrait is the outer silhouette of the public-domain engraving
+"Joseph Fourier" by A. F. B. Geille after J. Boilly (Wikimedia Commons).  The
+closed contour is extracted by extract_portrait.py; only the silhouette is used
+because the ball can draw one continuous closed stroke (not the engraving's
+interior hatching).
+
 A closed one-stroke drawing is represented as a complex Fourier series
 
     z(u) = sum_k c_k exp(2*pi*i*k*u),      u in [0, 1).
@@ -15,6 +21,7 @@ sharp details (nose, cravat) are traversed slowly, long smooth strokes quickly.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 from scipy.ndimage import gaussian_filter1d, minimum_filter1d
@@ -23,38 +30,15 @@ from controller import ReferenceState
 
 
 # --------------------------------------------------------------------------- #
-# A stylised one-stroke profile of Joseph Fourier (normalised coordinates).
-# The curve starts at the lower-left shoulder, follows the coat, neck, profile,
-# wig and returns along the bottom of the bust.  It is intentionally a single
-# closed stroke: the ball never lifts, so every visible line is part of it.
+# Default portrait: closed silhouette extracted from the real engraving.
+# The extraction script and source image are in extract_portrait.py / assets/.
 # --------------------------------------------------------------------------- #
-FOURIER_PROFILE_POINTS = np.array(
-    [
-        # rounded left shoulder / coat
-        (-0.55, -1.04), (-0.60, -1.00), (-0.62, -0.95), (-0.61, -0.89),
-        (-0.56, -0.83), (-0.50, -0.77), (-0.43, -0.72), (-0.37, -0.64),
-        (-0.33, -0.55), (-0.32, -0.44),
-        # back of neck and wavy wig
-        (-0.42, -0.40), (-0.52, -0.34), (-0.60, -0.23), (-0.66, -0.08),
-        (-0.60, 0.03), (-0.68, 0.12), (-0.58, 0.22), (-0.64, 0.32),
-        (-0.50, 0.41), (-0.54, 0.52), (-0.38, 0.61), (-0.30, 0.70),
-        (-0.12, 0.77), (0.06, 0.77), (0.20, 0.72), (0.30, 0.61),
-        (0.37, 0.47), (0.41, 0.36),
-        # forehead, rounded nose, lips, chin
-        (0.45, 0.27), (0.48, 0.17), (0.54, 0.08), (0.61, 0.03),
-        (0.68, -0.02), (0.71, -0.06), (0.69, -0.10), (0.64, -0.13),
-        (0.59, -0.16), (0.64, -0.20), (0.59, -0.23), (0.65, -0.28),
-        (0.58, -0.34), (0.50, -0.42), (0.38, -0.49), (0.27, -0.55),
-        (0.20, -0.65),
-        # collar / coat front
-        (0.25, -0.72), (0.32, -0.78), (0.34, -0.84),
-        (0.30, -0.90), (0.36, -0.97), (0.45, -1.01), (0.53, -1.04),
-        (0.57, -1.09), (0.54, -1.14), (0.45, -1.16), (0.34, -1.15),
-        (0.20, -1.12), (0.05, -1.10), (-0.12, -1.08), (-0.28, -1.06),
-        (-0.42, -1.04), (-0.50, -1.05), (-0.55, -1.04),
-    ],
-    dtype=float,
-)
+_PORTRAIT_POINTS = Path(__file__).resolve().parent / "assets" / "fourier_portrait_points.npy"
+if not _PORTRAIT_POINTS.exists():
+    raise FileNotFoundError(
+        f"missing {_PORTRAIT_POINTS}; run `python extract_portrait.py` first"
+    )
+FOURIER_PROFILE_POINTS = np.load(_PORTRAIT_POINTS)
 
 
 @dataclass
