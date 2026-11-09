@@ -128,6 +128,37 @@ python auto_draw.py image.png --harmonics 60 --span 0.44 --speed 4
 
 **边界说明**：当前管线画的是**单条闭合外轮廓**，因此不会自动画出物体内部的眼睛、文字或排线。复杂背景的分割也不是万能的；遇到分割失败时，用 `--mask` 是最稳的方式。如果需要内部细节，可以把外轮廓和多条内部轮廓串成一条带“提笔/落笔”标记的路径，这是下一步扩展方向。
 
+## 太极图：一条连续运动
+
+太极图包含四个图形元素：外圆、S 曲线、上点和下点。严格意义上的**一条闭合墨线**在拓扑上无法同时包含它们（外圆和 S 会在上下两极形成奇度顶点，点还需要独立闭合）。所以这里采用：
+
+- 球**全程不停**，一条连续控制轨迹；
+- 外圆和 S 连续落笔，两个点分别落笔；
+- 它们之间的移动段是**虚拟抬笔**，球仍然运动，但不显示为墨线。
+
+这样画面里是一个完整的太极图，同时球没有在画面上“瞬移”。
+
+![Taiji](outputs/taiji/preview.png)
+
+- 4× 双视图视频：[`outputs/taiji/taiji.mp4`](outputs/taiji/taiji.mp4)（17.9 s，1800×900）
+- 4× 循环预览：[`outputs/taiji/preview.gif`](outputs/taiji/preview.gif)
+- 跟踪曲线：[`outputs/taiji/tracking.png`](outputs/taiji/tracking.png)
+
+| 指标 | 数值 |
+|---|---:|
+| 物理时长 | 69.7 s |
+| 轨迹总长度（含抬笔移动） | 3.136 m |
+| 位置 RMS 误差 | **0.28 mm** |
+| 最大误差 | 2.04 mm |
+| 最大参考加速度 | 0.40 m/s² |
+
+代码：[`taiji_draw.py`](taiji_draw.py)
+
+```bash
+python taiji_draw.py
+python taiji_draw.py --no-video
+```
+
 ### 怎么把一笔画变成参考轨迹
 
 `drawing.py` 把闭合轮廓采样成复数序列 \(z_n=x_n+iy_n\)，做 FFT 得到傅里叶描述子：
@@ -175,12 +206,15 @@ python draw_fourier.py --speed 4 --width 900 --height 900
 # 任意图片 → 自动轮廓 → MuJoCo 画线
 python auto_draw.py assets/demo_star.png --name "Star" --harmonics 24
 
+# 太极图：一条连续运动 + 虚拟抬笔
+python taiji_draw.py
+
 # 只跑物理和控制，不渲染
 python simulate.py --no-video
 python draw_fourier.py --no-video
 
 # 自检
-python -m unittest -v test_smoke.py test_fourier.py test_image_to_stroke.py
+python -m unittest -v test_smoke.py test_fourier.py test_image_to_stroke.py test_taiji.py
 ```
 
 macOS 上程序会自动设置 `MUJOCO_GL=cgl`。Linux 无显示器时，渲染前可设置：
@@ -326,6 +360,15 @@ p_d=r\begin{bmatrix}\cos\omega t\\ \sin\omega t\end{bmatrix},\qquad
 | [`outputs/fourier/fourier_analysis.png`](outputs/fourier/fourier_analysis.png) | 傅里叶重建、频谱、收敛、速度剖面 |
 | [`outputs/fourier/portrait_reference.png`](outputs/fourier/portrait_reference.png) | 原版画、提取轮廓与球轨迹对照 |
 | [`outputs/fourier/source_contour.png`](outputs/fourier/source_contour.png) | 原版画上的红色提取轮廓 |
+
+运行 `python taiji_draw.py` 后：
+
+| 文件 | 内容 |
+|---|---|
+| [`outputs/taiji/taiji.mp4`](outputs/taiji/taiji.mp4) | 4× 双视图太极绘制 |
+| [`outputs/taiji/preview.gif`](outputs/taiji/preview.gif) | 4× 循环预览 |
+| [`outputs/taiji/preview.png`](outputs/taiji/preview.png) | 完成帧 |
+| [`outputs/taiji/tracking.png`](outputs/taiji/tracking.png) | 轨迹、误差、板角、力矩 |
 | [`outputs/fourier/trajectory.npz`](outputs/fourier/trajectory.npz) | 绘制过程完整日志 |
 | [`outputs/fourier/metrics.json`](outputs/fourier/metrics.json) | 全部指标 |
 
@@ -345,15 +388,19 @@ ball_on_plate_mujoco/
 ├── extract_portrait.py   # Fourier 版画的专用提取脚本
 ├── image_to_stroke.py    # 任意图片：前景分割 + 轮廓提取
 ├── auto_draw.py          # 任意图片 → MuJoCo 画线的一键管线
+├── taiji_draw.py         # 太极图：连续运动 + 虚拟抬笔
 ├── draw_fourier.py       # Fourier 绘制主循环、俯视 + 3D 双视图
 ├── drawing_plots.py      # 绘制结果与傅里叶分析图
 ├── assets/               # 公有领域原图与提取的轮廓点
 ├── test_smoke.py         # 圆周端到端自检
 ├── test_fourier.py       # Fourier 参考快速自检
 ├── test_image_to_stroke.py # 图片轮廓提取自检
+├── test_taiji.py         # 太极参考几何自检
 ├── requirements.txt
 ├── outputs/              # 圆周结果
-└── outputs/fourier/      # Fourier 一笔画结果
+├── outputs/fourier/      # Fourier 一笔画结果
+├── outputs/auto/         # 任意图片管线结果
+└── outputs/taiji/        # 太极图结果
 ```
 
 ## 实现说明与可扩展方向

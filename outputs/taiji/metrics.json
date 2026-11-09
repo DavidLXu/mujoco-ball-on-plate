@@ -1,0 +1,13 @@
+{
+  "drawing": "Taiji (yin-yang)",
+  "path_length_m": 3.1358343374187623,
+  "duration_s": 69.68520749819471,
+  "video_duration_s": 17.92130187454868,
+  "speed_factor": 4.0,
+  "rms_mm": 0.2812963983989968,
+  "max_mm": 2.040005962015429,
+  "max_tilt_deg": 3.779090442205708,
+  "max_torque_nm": 0.5897026398548506,
+  "max_ref_accel_m_s2": 0.3990973977394758,
+  "pen_down_strokes": 4
+}
