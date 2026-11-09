@@ -99,20 +99,23 @@ def _hud(
     progress: float,
     harmonics: int,
     path_length: float,
+    title: str,
+    speed_factor: float,
 ) -> np.ndarray:
     image = Image.fromarray(frame).convert("RGBA")
     overlay = Image.new("RGBA", image.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
     w, h = image.size
     try:
-        f_title = ImageFont.truetype(str(FONT), int(w * 0.0255))
+        title_size = 0.0255 if len(title) <= 32 else 0.0205
+        f_title = ImageFont.truetype(str(FONT), int(w * title_size))
         f_body = ImageFont.truetype(str(FONT), int(w * 0.0195))
         f_small = ImageFont.truetype(str(FONT), int(w * 0.0155))
     except OSError:
         f_title = f_body = f_small = ImageFont.load_default()
 
     x0, y0 = int(w * 0.032), int(h * 0.030)
-    box_w, box_h = int(w * 0.640), int(h * 0.165)
+    box_w, box_h = int(w * 0.700), int(h * 0.165)
     draw.rounded_rectangle(
         (x0, y0, x0 + box_w, y0 + box_h),
         radius=int(w * 0.012),
@@ -126,14 +129,14 @@ def _hud(
     )
     tx = x0 + int(w * 0.020)
     draw.text((tx, y0 + int(box_h * 0.08)),
-              "J. FOURIER · ONE-STROKE PORTRAIT", font=f_title,
+              title, font=f_title,
               fill=(241, 245, 249, 255))
     draw.text((tx, y0 + int(box_h * 0.39)),
               f"t = {t:5.1f} / {duration:4.1f} s      error = {err_mm:4.2f} mm",
               font=f_body, fill=(226, 232, 240, 255))
     draw.text((tx, y0 + int(box_h * 0.63)),
-              f"4× speed   ·   K = {harmonics} harmonics   ·   stroke {path_length:.2f} m"
-              "   ·   2 kHz / 1 kHz",
+              f"{speed_factor:g}× speed   ·   K = {harmonics} harmonics"
+              f"   ·   stroke {path_length:.2f} m   ·   2 kHz / 1 kHz",
               font=f_small, fill=(148, 163, 184, 255))
 
     # progress bar
@@ -240,7 +243,7 @@ def _add_trail_3d(scene, points: list[np.ndarray], radius: float = 0.0020) -> No
         scene.ngeom += 1
 
 
-def _compose_views(top: np.ndarray, view3d: np.ndarray) -> np.ndarray:
+def _compose_views(top: np.ndarray, view3d: np.ndarray, speed_factor: float = 4.0) -> np.ndarray:
     """Place the top view and the 3-D plant view side by side."""
     h, w = top.shape[:2]
     canvas = Image.new("RGB", (2 * w, h), (8, 15, 30))
@@ -258,7 +261,7 @@ def _compose_views(top: np.ndarray, view3d: np.ndarray) -> np.ndarray:
     draw.rounded_rectangle(badge, radius=int(h * 0.012), fill=(8, 15, 30, 200),
                            outline=(251, 146, 60, 180), width=2)
     draw.text((badge[0] + int(w * 0.016), badge[1] + int(h * 0.009)),
-              "4× SPEED", font=f, fill=(253, 186, 116, 255))
+              f"{speed_factor:g}× SPEED", font=f, fill=(253, 186, 116, 255))
     return np.asarray(canvas)
 
 
@@ -286,8 +289,15 @@ def _make_gif(video_path: Path, gif_path: Path, duration: float) -> bool:
 # Main simulation
 # --------------------------------------------------------------------------- #
 def run(
+    points: np.ndarray | None = None,
+    source_image: str | Path | None = None,
+    name: str = "J. Fourier",
+    title: str | None = None,
+    prefix: str = "ball_on_plate_fourier",
     harmonics: int = 40,
     span: float = 0.46,
+    smooth_sigma: float = 40.0,
+    speed_cfg: dict | None = None,
     render: bool = True,
     width: int = 900,
     height: int = 900,
@@ -300,20 +310,23 @@ def run(
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
 
-    # Rotate the closed portrait so it starts/ends at the smooth bottom centre,
-    # not at a sharp shoulder corner.
-    raw = FOURIER_PROFILE_POINTS[:-1].copy()
-    start_idx = int(np.argmin((raw[:, 0] - 0.05) ** 2 + (raw[:, 1] + 1.08) ** 2))
-    raw = np.roll(raw, -start_idx, axis=0)
+    if points is None:
+        points = FOURIER_PROFILE_POINTS
+    raw = np.asarray(points, dtype=float).copy()
+    if np.allclose(raw[0], raw[-1]):
+        raw = raw[:-1]
+    if len(raw) < 8:
+        raise ValueError("need at least 8 contour points")
 
     fourier_path = make_fourier_path(
-        raw, harmonics=harmonics, target_span=span, smooth_sigma=40.0
+        raw, harmonics=harmonics, target_span=span, smooth_sigma=smooth_sigma
     )
-    # Slow enough that the plate never runs out of authority, including at the
-    # sharp nose/shoulder details.
-    drawing = FourierDrawing(
-        fourier_path, a_lat=0.08, a_tan=0.015, v_max=0.06, v_min=0.003
-    )
+    speed_defaults = dict(a_lat=0.08, a_tan=0.015, v_max=0.06, v_min=0.003)
+    if speed_cfg:
+        speed_defaults.update(speed_cfg)
+    drawing = FourierDrawing(fourier_path, **speed_defaults)
+    if title is None:
+        title = f"{name.upper()} · ONE-STROKE"
 
     model = mujoco.MjModel.from_xml_path(str(MODEL_PATH))
     data = mujoco.MjData(model)
@@ -329,8 +342,8 @@ def run(
     # The decorative gimbal hub is just below the plate and can show through
     # the thin plate at some angles; hide it (and the ball orientation dots)
     # for a clean top-down drawing view.
-    for name in ("hub", "ball_mark_a", "ball_mark_b", "ball_mark_c"):
-        gid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, name)
+    for gname in ("hub", "ball_mark_a", "ball_mark_b", "ball_mark_c"):
+        gid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, gname)
         if gid >= 0:
             model.geom_rgba[gid] = [0.0, 0.0, 0.0, 0.0]
     # In the top-down view the directional-light shadow map produces a bright
@@ -385,7 +398,7 @@ def run(
             projector = Projector(model, "drawing", width, height)
             import imageio.v2 as imageio
 
-            video_path = outdir / "ball_on_plate_fourier.mp4"
+            video_path = outdir / f"{prefix}.mp4"
             writer = imageio.get_writer(
                 video_path, fps=fps, codec="libx264", quality=8,
                 macro_block_size=None, pixelformat="yuv420p",
@@ -452,6 +465,7 @@ def run(
             top = _hud(
                 top, min(float(data.time), drawing.T), drawing.T, err_norm * 1000.0,
                 drawing.progress(data.time), harmonics, drawing.path_length,
+                title=title, speed_factor=speed_factor,
             )
             top = _panel_tag(
                 top, "TOP VIEW", "ball-drawn stroke + Fourier guide"
@@ -467,7 +481,7 @@ def run(
                 view3d, "3D VIEW", "table, two-axis plate and free ball"
             )
 
-            frame = _compose_views(top, view3d)
+            frame = _compose_views(top, view3d, speed_factor=speed_factor)
             writer.append_data(np.ascontiguousarray(frame))
             if not preview_saved and data.time >= drawing.T + 0.35:
                 Image.fromarray(frame).save(outdir / "preview.png")
@@ -481,12 +495,12 @@ def run(
         writer.close()
         wall = time.perf_counter() - wall_start
         if verbose:
-            print(f"[video] {outdir / 'ball_on_plate_fourier.mp4'} "
+            print(f"[video] {outdir / f'{prefix}.mp4'} "
                   f"({duration / speed_factor:.1f} s at {speed_factor:g}x, "
                   f"{2 * width}x{height}, {fps} fps, wall {wall:.1f} s)")
         if make_preview_gif:
             gif = outdir / "preview.gif"
-            if _make_gif(outdir / "ball_on_plate_fourier.mp4", gif,
+            if _make_gif(outdir / f"{prefix}.mp4", gif,
                          duration=min(drawing.T + 1.0, duration)):
                 if verbose:
                     print(f"[gif]   {gif}")
@@ -502,7 +516,8 @@ def run(
     cumulative = fourier_path.cumulative_energy()
 
     metrics = {
-        "drawing": "Joseph Fourier silhouette after Geille/Boilly (public domain)",
+        "drawing": name,
+        "source_image": str(source_image) if source_image is not None else "",
         "harmonics": harmonics,
         "target_span_m": span,
         "path_length_m": drawing.path_length,
@@ -543,8 +558,11 @@ def run(
         for k, v in metrics.items():
             fh.write(f"{k}: {v}\n")
 
-    make_drawing_plots(arrays, metrics, outdir / "tracking.png")
-    make_fourier_analysis(raw, fourier_path, drawing, metrics, outdir / "fourier_analysis.png")
+    make_drawing_plots(arrays, metrics, outdir / "tracking.png", title=title)
+    make_fourier_analysis(
+        raw, fourier_path, drawing, metrics, outdir / "fourier_analysis.png",
+        title=title,
+    )
 
     if verbose:
         print("\n=== Fourier drawing result ===")
@@ -599,6 +617,11 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
 
     run(
+        points=FOURIER_PROFILE_POINTS,
+        source_image=ROOT / "assets" / "fourier_wiki.jpg",
+        name="J. Fourier",
+        title="J. FOURIER · ONE-STROKE PORTRAIT",
+        prefix="ball_on_plate_fourier",
         harmonics=args.harmonics,
         span=args.span,
         render=not args.no_video,

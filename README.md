@@ -5,7 +5,8 @@
 在这个基础模型上实现了两类目标：
 
 1. 从板中心平滑起步，稳定跟踪半径 0.16 m、周期 4 s 的圆周；
-2. 把任意闭合一笔画分解成傅里叶描述子，让球在板上画出 **Joseph Fourier 版画的单笔剪影**。
+2. 把任意闭合一笔画分解成傅里叶描述子，让球在板上画出 **Joseph Fourier 版画的单笔剪影**；
+3. 提供 `auto_draw.py`：输入**任意图片**，自动提取主轮廓并驱动 MuJoCo 完成绘图。
 
 ![preview](outputs/preview.png)
 
@@ -69,6 +70,64 @@
 | 接触滑移速度 RMS | 0.39 mm/s |
 | 40 阶谐波能量占比 | 99.999% |
 
+## 可复用管线：任意图片 → 自动画线
+
+`auto_draw.py` 把整条链路封装成一条命令：
+
+```bash
+python auto_draw.py path/to/image.png
+```
+
+流程是：
+
+1. **前景分割**：优先使用 PNG alpha；否则用图像边界估计背景色，自动选择前景极性；也可以用 `--mode threshold`、`--threshold`、`--mask` 手动指定；
+2. **轮廓提取**：做相对尺度的形态学闭运算，把线稿/版画的断线连成实体，取最大外轮廓并做 RDP 简化；
+3. **归一化与傅里叶拟合**：轮廓转成复数序列，FFT 后保留 K 个谐波；
+4. **物理可执行化**：按曲率生成限速剖面，送入原有的串级板球控制器；
+5. **输出**：4× 双视图视频、源图 + 轮廓图、对比图、跟踪曲线、指标和 `.npz` 日志。
+
+示例（五角星）：
+
+```bash
+python auto_draw.py assets/demo_star.png --name "Star" --harmonics 24
+```
+
+![auto pipeline demo](outputs/auto/star/comparison.png)
+
+- 五角星 4× 视频：[`outputs/auto/star/stroke.mp4`](outputs/auto/star/stroke.mp4)
+- 五角星预览：[`outputs/auto/star/preview.gif`](outputs/auto/star/preview.gif)
+
+输出目录默认是 `outputs/auto/<图片名>/`，包含：
+
+| 文件 | 内容 |
+|---|---|
+| `source.png` | 处理后的输入图 |
+| `mask.png` | 自动/手动得到的前景 mask |
+| `source_contour.png` | 原图 + 红色提取轮廓 |
+| `stroke.mp4` | 4× 双视图（左俯视 / 右 3D） |
+| `comparison.png` | 原图、轮廓、傅里叶路径与球轨迹对照 |
+| `tracking.png` / `fourier_analysis.png` | 误差、板角、力矩、频谱和速度 |
+| `contour_points.npy` | 可直接复用的闭合轮廓点 |
+| `metrics.json` | 全部指标 |
+
+常用参数：
+
+```bash
+# 复杂背景：显式提供 mask（白色=前景）
+python auto_draw.py photo.jpg --mask photo_mask.png
+
+# 白底线稿/版画：手动阈值
+python auto_draw.py engraving.jpg --mode threshold --threshold 220
+
+# 只验证提取与控制，不渲染
+python auto_draw.py image.png --no-video
+
+# 调整傅里叶阶数/绘制尺寸/播放倍率
+python auto_draw.py image.png --harmonics 60 --span 0.44 --speed 4
+```
+
+**边界说明**：当前管线画的是**单条闭合外轮廓**，因此不会自动画出物体内部的眼睛、文字或排线。复杂背景的分割也不是万能的；遇到分割失败时，用 `--mask` 是最稳的方式。如果需要内部细节，可以把外轮廓和多条内部轮廓串成一条带“提笔/落笔”标记的路径，这是下一步扩展方向。
+
 ### 怎么把一笔画变成参考轨迹
 
 `drawing.py` 把闭合轮廓采样成复数序列 \(z_n=x_n+iy_n\)，做 FFT 得到傅里叶描述子：
@@ -113,12 +172,15 @@ python simulate.py
 python draw_fourier.py
 python draw_fourier.py --speed 4 --width 900 --height 900
 
+# 任意图片 → 自动轮廓 → MuJoCo 画线
+python auto_draw.py assets/demo_star.png --name "Star" --harmonics 24
+
 # 只跑物理和控制，不渲染
 python simulate.py --no-video
 python draw_fourier.py --no-video
 
 # 自检
-python -m unittest -v test_smoke.py test_fourier.py
+python -m unittest -v test_smoke.py test_fourier.py test_image_to_stroke.py
 ```
 
 macOS 上程序会自动设置 `MUJOCO_GL=cgl`。Linux 无显示器时，渲染前可设置：
@@ -267,6 +329,8 @@ p_d=r\begin{bmatrix}\cos\omega t\\ \sin\omega t\end{bmatrix},\qquad
 | [`outputs/fourier/trajectory.npz`](outputs/fourier/trajectory.npz) | 绘制过程完整日志 |
 | [`outputs/fourier/metrics.json`](outputs/fourier/metrics.json) | 全部指标 |
 
+`auto_draw.py` 的每个输入图会在 `outputs/auto/<name>/` 下生成自己的 `stroke.mp4`、`comparison.png`、`mask.png` 和指标。
+
 仿真日志中的位置/速度都在**板坐标系**下，和控制器使用的坐标一致。
 
 ## 代码结构
@@ -278,12 +342,15 @@ ball_on_plate_mujoco/
 ├── simulate.py           # 圆周跟踪主循环、日志、视频/GIF
 ├── plotting.py           # 圆周结果曲线
 ├── drawing.py            # Fourier 描述子、任意一笔画、曲率限速
-├── extract_portrait.py   # 从真实版画提取单笔轮廓
+├── extract_portrait.py   # Fourier 版画的专用提取脚本
+├── image_to_stroke.py    # 任意图片：前景分割 + 轮廓提取
+├── auto_draw.py          # 任意图片 → MuJoCo 画线的一键管线
 ├── draw_fourier.py       # Fourier 绘制主循环、俯视 + 3D 双视图
 ├── drawing_plots.py      # 绘制结果与傅里叶分析图
 ├── assets/               # 公有领域原图与提取的轮廓点
 ├── test_smoke.py         # 圆周端到端自检
 ├── test_fourier.py       # Fourier 参考快速自检
+├── test_image_to_stroke.py # 图片轮廓提取自检
 ├── requirements.txt
 ├── outputs/              # 圆周结果
 └── outputs/fourier/      # Fourier 一笔画结果

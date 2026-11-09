@@ -13,7 +13,7 @@ import numpy as np
 from plotting import BG, CYAN, GREEN, GRID, MUTED, ORANGE, PANEL, PINK, TEXT, _style
 
 
-def make_drawing_plots(log: dict, metrics: dict, path: str | Path) -> Path:
+def make_drawing_plots(log: dict, metrics: dict, path: str | Path, title: str | None = None) -> Path:
     _style()
     path = Path(path)
     t = log["t"]
@@ -91,7 +91,7 @@ def make_drawing_plots(log: dict, metrics: dict, path: str | Path) -> Path:
             transform=ax.transAxes, color=MUTED, fontsize=9)
 
     fig.suptitle(
-        "Arbitrary-shape control  ·  ball draws a Fourier profile in one stroke",
+        title or "Arbitrary-shape control  ·  ball draws a one-stroke image",
         color=TEXT, fontsize=16, fontweight="bold", y=0.965,
     )
     fig.text(
@@ -112,6 +112,7 @@ def make_fourier_analysis(
     drawing,
     metrics: dict,
     path: str | Path,
+    title: str | None = None,
 ) -> Path:
     _style()
     path = Path(path)
@@ -187,7 +188,7 @@ def make_fourier_analysis(
             transform=ax.transAxes, color=MUTED, fontsize=9)
 
     fig.suptitle(
-        "Fourier descriptor construction of the one-stroke portrait",
+        title or "Fourier descriptor construction of the one-stroke image",
         color=TEXT, fontsize=16, fontweight="bold", y=0.965,
     )
     fig.text(

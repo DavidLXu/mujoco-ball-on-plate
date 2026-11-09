@@ -1,0 +1,25 @@
+drawing: Star
+source_image: assets/demo_star.png
+harmonics: 24
+target_span_m: 0.42
+path_length_m: 1.5217948959831524
+drawing_duration_s: 38.99833248058006
+video_duration_s: 10.299583120145016
+speed_factor: 4.0
+control_rate_hz: 1000.0
+render_speed_factor: 4.0
+rms_mm: 0.3632303490099405
+max_mm: 1.9471515444151872
+p95_mm: 0.8003667784356321
+final_error_mm: 0.6569028393988732
+max_tilt_deg: 2.790547322943129
+max_torque_nm: 2.1879813080580206
+torque_limit: 6.0
+saturation_fraction: 0.0
+slip_rms_mm_s: 0.3575012236664495
+max_ref_speed_m_s: 0.05966407261070978
+max_ref_accel_m_s2: 0.243480353657522
+fourier_energy_percent: 99.9975735061605
+start_point_m: [0.00035448271909857803, -0.1196650714330719]
+input_image: assets/demo_star.png
+extraction: {'mode': 'alpha', 'threshold': 8, 'foreground_fraction': 0.205784375, 'contour_vertices': 16, 'rdp_tolerance_px': 1.44, 'normalised_bbox': [[-1.0, -0.9506369426751593], [1.0, 0.9506369426751593]]}
